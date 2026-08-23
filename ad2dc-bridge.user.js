@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AutoDarts ↔ DartCounter Bridge (Dart-by-Dart)
 // @namespace    autodarts.dartcounter.bridge.dbd
-// @version      1.42.0
+// @version      1.43.0
 // @description  Read darts from AutoDarts and enter EACH dart individually into DartCounter's segment keypad, so checkout suggestions update live.
 // @match        http://127.0.0.1:3180/*
 // @match        http://192.168.*:3180/*
@@ -14,6 +14,8 @@
 // @grant        GM_notification
 // @grant        GM_unregisterMenuCommand
 // @grant        unsafeWindow
+// @updateURL    https://raw.githubusercontent.com/B4KER83/AD2DC/main/ad2dc-bridge.user.js
+// @downloadURL  https://raw.githubusercontent.com/B4KER83/AD2DC/main/ad2dc-bridge.user.js
 // ==/UserScript==
 
 (function () {
