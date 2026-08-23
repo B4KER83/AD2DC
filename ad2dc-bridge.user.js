@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AutoDarts ↔ DartCounter Bridge (Dart-by-Dart)
 // @namespace    autodarts.dartcounter.bridge.dbd
-// @version      1.43.0
+// @version      1.44.0
 // @description  Read darts from AutoDarts and enter EACH dart individually into DartCounter's segment keypad, so checkout suggestions update live.
 // @match        http://127.0.0.1:3180/*
 // @match        http://192.168.*:3180/*
@@ -473,9 +473,9 @@
     scoreLabel.textContent = "Score";
     turnScoreEl = document.createElement("span");
     Object.assign(turnScoreEl.style, {
-      padding: "6px 10px", border: "1px solid #374151", borderRadius: "4px",
+      padding: "6px 14px", border: "1px solid #374151", borderRadius: "4px",
       background: "#111827", color: "#fbbf24", fontFamily: "monospace", fontWeight: "bold",
-      minWidth: "28px", textAlign: "center"
+      fontSize: "18px", minWidth: "40px", textAlign: "center"
     });
     turnScoreEl.textContent = "0";
     scoreGroup.appendChild(scoreLabel);
@@ -507,75 +507,44 @@
 
     guidePanel.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-        <strong style="font-size:13px;">AutoDarts ↔ DartCounter Bridge — Guide</strong>
+        <strong style="font-size:13px;">AutoDarts ↔ DartCounter Bridge — Quick Start</strong>
         <span id="ad2dc-guide-close" style="cursor:pointer; padding:0 6px; font-size:14px;">&times;</span>
       </div>
 
-      <p><strong>What this is</strong><br>
-      A helper that scores your darts into DartCounter for you automatically,
-      using your AutoDarts board. Throw your three darts, take them out of
-      the board, and DartCounter fills in and advances your turn on its
-      own — no tapping the keypad yourself.</p>
+      <p><strong>What it does</strong><br>
+      Reads darts from your AutoDarts board and enters them into DartCounter
+      for you, dart by dart — checkout suggestions update live, no manual
+      tapping needed.</p>
 
-      <p><strong>Before you start (one-time setup)</strong><br>
-      DartCounter has its own built-in "Auto Submit" setting, separate from
-      this tool. It needs to be turned <strong>OFF</strong> in DartCounter's
-      own settings, or it'll conflict with this bridge. Look in
-      DartCounter's settings menu (the gear icon) for an "Auto Submit"
-      option and switch it off — you only need to do this once.</p>
+      <p><strong>How to use it</strong><br>
+      1. Open your DartCounter match.<br>
+      2. Click the Bridge button (top-left, starts OFF). It turns green and
+      says ON.<br>
+      3. Throw — darts appear in DartCounter within a second or two.</p>
 
-      <p><strong>Getting started</strong><br>
-      1. Open your DartCounter match as normal, in the browser this script
-      is installed in.<br>
-      2. Find the small dark box near the top of the page — it says
-      "Bridge (D-by-D)" with an OFF button next to it.<br>
-      3. Click that OFF button. It'll turn green and say ON. Give it a few
-      seconds — a live view of your AutoDarts board will pop open
-      underneath.<br>
-      4. That's it. Throw a dart at the board — you should see it appear
-      in DartCounter within a second or two.</p>
+      <p><strong>Handled automatically when Bridge turns on</strong><br>
+      • DartCounter's own "Auto Submit" setting is switched off (it would
+      otherwise conflict with this tool).<br>
+      • DartCounter's input mode is switched to dart-by-dart.<br>
+      No settings menu visits needed.</p>
 
-      <p><strong>What each button does</strong><br>
-      <strong>Bridge</strong> — the main on/off switch. ON means darts get
-      read and entered automatically. OFF means nothing happens and the
-      board view closes.<br>
-      <strong>Auto Submit</strong> — turns itself ON whenever you turn the
-      Bridge on. With this on, after you pull your darts out of the board,
-      it also presses DartCounter's Submit button for you (needed after a
-      bust, where DartCounter asks you to confirm). You can switch it back
-      off if you'd rather press Submit yourself.<br>
-      <strong>(i) icon</strong> — opens this guide. Click it again, or the
-      × in the corner, to close it.</p>
+      <p><strong>The three boxes</strong><br>
+      <strong>Bridge</strong> — main on/off switch.<br>
+      <strong>Auto Submit</strong> — presses DartCounter's Submit button for
+      you after a takeout (e.g. after a bust). Turns on automatically with
+      the Bridge; toggle off to press Submit yourself instead.<br>
+      <strong>Score</strong> — running total for the current throw, adds up
+      as each dart lands, resets when darts are pulled from the board.</p>
 
-      <p><strong>Moving and resizing the board view</strong><br>
-      Click and drag the dark bar where "Bridge" and "Auto Submit" are —
-      that moves the whole box. To make it bigger or smaller, click and
-      drag the very bottom-right corner. It'll remember wherever you leave
-      it.</p>
-
-      <p><strong>Things worth knowing</strong><br>
-      • You don't need AutoDarts open anywhere else — turning the Bridge on
-      is all that's needed.<br>
-      • It works on any DartCounter page, including practice modes like the
-      Checkout Trainer that don't show whose "turn" it is.<br>
-      • If a dart is scored as the wrong number, that's AutoDarts' own
-      camera reading it wrong, not this tool — it just enters whatever
-      AutoDarts decided the throw was.</p>
+      <p><strong>Staying up to date</strong><br>
+      This script auto-updates — Tampermonkey checks the source on GitHub
+      periodically and installs new versions on its own. No need to
+      re-paste it yourself.</p>
 
       <p><strong>If it stops working</strong><br>
-      1. Check DartCounter's own "Auto Submit" setting is switched off (see
-      "Before you start" above) — this is the most common cause of odd
-      behaviour.<br>
-      2. Turn the Bridge off, then back on again — this fixes most other
-      hiccups.<br>
-      3. If you've just installed an update and it still seems to be doing
-      the old behaviour, open the Tampermonkey extension, check the script
-      is showing the newest version number, and if not, re-paste the whole
-      script and save it again.<br>
-      4. For anything trickier, open DevTools (press F12) and look at the
-      Console tab — every message from this tool starts with
-      <code>[AD2DC-DBD]</code> and explains what it's doing or why
-      something failed.</p>
+      Turn the Bridge off and back on — fixes most hiccups. Still stuck?
+      Open DevTools (F12) → Console, and look for lines starting
+      <code>[AD2DC-DBD]</code> for what it's doing or why something failed.</p>
     `;
 
     document.documentElement.appendChild(guidePanel);
