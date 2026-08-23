@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AutoDarts ↔ DartCounter Bridge (Dart-by-Dart)
 // @namespace    autodarts.dartcounter.bridge.dbd
-// @version      1.44.0
+// @version      1.46.0
 // @description  Read darts from AutoDarts and enter EACH dart individually into DartCounter's segment keypad, so checkout suggestions update live.
 // @match        http://127.0.0.1:3180/*
 // @match        http://192.168.*:3180/*
@@ -27,7 +27,8 @@
     storeDartKey: "autodarts_dart_seq",
     storeTakeoutKey: "autodarts_takeout_seq",
     notify: true,
-    debug: true // logs every raw slot change so we can see exactly what Autodarts outputs
+    debug: true, // logs every raw slot change so we can see exactly what Autodarts outputs
+    updateUrl: "https://raw.githubusercontent.com/B4KER83/AD2DC/main/ad2dc-bridge.user.js" // keep in sync with @updateURL/@downloadURL above
   };
 
   const MIN_TOP = 10; // never let the drag box go above this, so it can't end up hidden off the top of the page
@@ -481,9 +482,27 @@
     scoreGroup.appendChild(scoreLabel);
     scoreGroup.appendChild(turnScoreEl);
 
+    // Update check — opens the script's own raw source URL in a new tab.
+    // Tampermonkey intercepts that navigation itself and shows its
+    // install/update page (same as pasting the URL into the address bar
+    // manually) — there's no API for a userscript to trigger Tampermonkey's
+    // update check directly, so this is the reliable way to get the same
+    // result with one click instead of digging through the dashboard.
+    const updateBtn = document.createElement("button");
+    updateBtn.textContent = "Update";
+    Object.assign(updateBtn.style, {
+      cursor: "pointer", padding: "6px 10px", border: "1px solid #374151",
+      borderRadius: "4px", background: "#6b7280", color: "#fff",
+      fontFamily: "monospace", fontSize: "11px"
+    });
+    updateBtn.addEventListener("click", () => {
+      window.open(CFG.updateUrl, "_blank");
+    });
+
     dragHandle.appendChild(bridgeGroup);
     dragHandle.appendChild(autoSubmitGroup);
     dragHandle.appendChild(scoreGroup);
+    dragHandle.appendChild(updateBtn);
     wrap.appendChild(dragHandle);
     document.documentElement.appendChild(wrap);
     makeDraggable(wrap, dragHandle);
@@ -537,9 +556,11 @@
       as each dart lands, resets when darts are pulled from the board.</p>
 
       <p><strong>Staying up to date</strong><br>
-      This script auto-updates — Tampermonkey checks the source on GitHub
-      periodically and installs new versions on its own. No need to
-      re-paste it yourself.</p>
+      This script auto-updates in the background — Tampermonkey checks the
+      source on GitHub periodically on its own. Want it right now instead
+      of waiting? Click <strong>Update</strong> below the Score
+      box — it opens the source in a new tab and Tampermonkey handles the
+      rest.</p>
 
       <p><strong>If it stops working</strong><br>
       Turn the Bridge off and back on — fixes most hiccups. Still stuck?
