@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AutoDarts ↔ DartCounter Bridge (Dart-by-Dart)
 // @namespace    autodarts.dartcounter.bridge.dbd
-// @version      1.47.0
+// @version      1.48.0
 // @description  Read darts from AutoDarts and enter EACH dart individually into DartCounter's segment keypad, so checkout suggestions update live.
 // @match        http://127.0.0.1:3180/*
 // @match        http://192.168.*:3180/*
@@ -738,7 +738,21 @@
   // separate Miss button. Handled as its own path since none of the X01
   // tab/number logic applies here.
   function getAroundTheClockKeyboardRoot() {
-    return document.querySelector("[game-keyboard]") || document.querySelector(".in-game-keyboard-container");
+    const candidates = document.querySelectorAll("[game-keyboard], .in-game-keyboard-container");
+    for (const root of candidates) {
+      // The [game-keyboard] attribute/class turned out to exist even on
+      // normal X01 pages (a generic Angular directive, not exclusive to
+      // this mode) — presence alone was a false positive. Confirm this is
+      // genuinely the Around the Clock keypad by checking for its
+      // distinctive shape: a button whose own text is a combined code like
+      // "S10"/"D3"/"T20". The X01 keypad never has this — its Single/
+      // Double/Treble are separate tab buttons, and numbers are separate
+      // plain-number buttons, never combined into one string.
+      const hasGroupedNumberButton = Array.from(root.querySelectorAll("button.key"))
+        .some(btn => /^[SDT]\d{1,2}$/.test((btn.textContent || "").trim()));
+      if (hasGroupedNumberButton) return root;
+    }
+    return null;
   }
 
   function findAroundTheClockButton(text) {
