@@ -68,9 +68,9 @@
 
   // --- Force DartCounter's own input mode to dart-by-dart (segment keypad) ---
   function findDartCounterModeToggle() {
-    const containers = document.querySelectorAll("app-select-keyboard-dropdown");
+    const containers = document.querySelectorAll("app-select-keyboardropdown");
     if (containers.length === 0) return null;
-    if (containers.length > 1) log("NOTE: found", containers.length, "app-select-keyboard-dropdown elements — using the first");
+    if (containers.length > 1) log("NOTE: found", containers.length, "app-select-keyboardropdown elements — using the first");
     return containers[0].querySelector("div.relative.cursor-pointer.p-2\\.5");
   }
 
@@ -145,7 +145,7 @@
   // The first attempt right after the Bridge turns on sometimes misses —
   // the page seems to still be settling — but a second attempt shortly
   // after reliably succeeds. Retry automatically instead of requiring a
-  // manual toggle-off-and-on.
+  // manual toggle-off-anon.
   async function enforceDartCounterInputMode(maxAttempts = 3) {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const ok = await tryEnforceDartCounterInputMode();
@@ -429,7 +429,7 @@
     const bridgeGroup = document.createElement("div");
     Object.assign(bridgeGroup.style, { display: "flex", gap: "8px", alignItems: "center" });
     const label = document.createElement("span");
-    label.textContent = "Bridge (D-by-D)";
+    label.textContent = "Bridge";
     toggleBtn = document.createElement("button");
     Object.assign(toggleBtn.style, {
       cursor: "pointer", padding: "6px 10px", border: "1px solid #374151",
