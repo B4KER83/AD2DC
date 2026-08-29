@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AutoDarts ↔ DartCounter Bridge (Dart-by-Dart)
 // @namespace    autodarts.dartcounter.bridge.dbd
-// @version      1.46.0
+// @version      1.47.0
 // @description  Read darts from AutoDarts and enter EACH dart individually into DartCounter's segment keypad, so checkout suggestions update live.
 // @match        http://127.0.0.1:3180/*
 // @match        http://192.168.*:3180/*
@@ -731,9 +731,68 @@
     return null;
   }
 
+  // --- Around the Clock uses a completely different keypad from X01 —
+  // instead of Single/Double/Treble tabs plus a shared number grid, it
+  // groups 3 pre-labelled buttons per number ("S10", "D10", "T10" as
+  // literal button text) inside a [game-keyboard] container, plus a
+  // separate Miss button. Handled as its own path since none of the X01
+  // tab/number logic applies here.
+  function getAroundTheClockKeyboardRoot() {
+    return document.querySelector("[game-keyboard]") || document.querySelector(".in-game-keyboard-container");
+  }
+
+  function findAroundTheClockButton(text) {
+    const root = getAroundTheClockKeyboardRoot();
+    if (!root) return null;
+    const wanted = text.trim().toLowerCase();
+    const buttons = root.querySelectorAll("button.key");
+    for (const btn of buttons) {
+      if ((btn.textContent || "").trim().toLowerCase() === wanted) return btn;
+    }
+    return null;
+  }
+
+  // Returns true if this mode was detected and handled (whether or not the
+  // click itself succeeded) — false means "not this mode, fall through to
+  // the normal X01 keypad logic instead."
+  function enterDartAroundTheClock(parsed) {
+    const root = getAroundTheClockKeyboardRoot();
+    if (!root) return false;
+
+    if (!parsed || parsed.tab === "MISS") {
+      const el = findAroundTheClockButton("Miss");
+      if (clickEl(el)) log("Around the Clock: entered MISS");
+      else { log("FAILED — MISS button not found in Around the Clock keyboard"); notify("AD2DC Error", "MISS button not found", true); }
+      return true;
+    }
+
+    let label = null;
+    if (parsed.tab === "Single") label = "S" + parsed.num;
+    else if (parsed.tab === "Double") label = "D" + parsed.num;
+    else if (parsed.tab === "Treble") label = "T" + parsed.num;
+    else if (parsed.tab === "Bull") label = "Bull"; // unconfirmed label text — flag if this doesn't register
+    else if (parsed.tab === "Outer") label = "25"; // unconfirmed label text — flag if this doesn't register
+
+    const el = label ? findAroundTheClockButton(label) : null;
+    if (el) {
+      clickEl(el);
+      log("Around the Clock: entered", label);
+    } else {
+      // Doesn't match a button currently on screen (e.g. not the number
+      // you're actually aiming at right now) — count it as a miss.
+      const missEl = findAroundTheClockButton("Miss");
+      clickEl(missEl);
+      log("Around the Clock: no button found for", label, "— entered MISS instead");
+    }
+    return true;
+  }
+
   // Enter one dart via the segment keypad
   async function enterDartDC(parsed) {
     if (!parsed) return;
+
+    if (enterDartAroundTheClock(parsed)) return;
+
     const root = getScorepadRoot();
 
     if (parsed.tab === "MISS") {
