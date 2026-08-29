@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AutoDarts ↔ DartCounter Bridge (Dart-by-Dart)
 // @namespace    autodarts.dartcounter.bridge.dbd
-// @version      1.48.0
+// @version      1.49.0
 // @description  Read darts from AutoDarts and enter EACH dart individually into DartCounter's segment keypad, so checkout suggestions update live.
 // @match        http://127.0.0.1:3180/*
 // @match        http://192.168.*:3180/*
@@ -933,7 +933,7 @@
     // reorders status elements ahead of the 3 dart slots; the old
     // fixed-position slice(2, 5) would silently misattribute darts to the
     // wrong slot if that ever happened.
-    const DART_VALUE_RE = /^(-|MISS|OUT|BULL|DBULL|SBULL|OUTER|\d{1,2}|[SDTMsdtm]\d{1,2})$/;
+    const DART_VALUE_RE = /^(-|MISS|OUT|BULL|DBULL|SBULL|OUTER|\d{1,2}|[SDTMsdtm]\d{1,2})$/i;
 
     function extractDartSlots(allEls) {
       const matches = allEls.filter(t => DART_VALUE_RE.test(t));
