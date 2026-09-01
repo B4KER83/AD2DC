@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AutoDarts ↔ DartCounter Bridge (Dart-by-Dart)
 // @namespace    autodarts.dartcounter.bridge.dbd
-// @version      1.49.0
+// @version      1.50.0
 // @description  Read darts from AutoDarts and enter EACH dart individually into DartCounter's segment keypad, so checkout suggestions update live.
 // @match        http://127.0.0.1:3180/*
 // @match        http://192.168.*:3180/*
@@ -32,6 +32,52 @@
   };
 
   const MIN_TOP = 10; // never let the drag box go above this, so it can't end up hidden off the top of the page
+
+  // --- Caller: plays a .wav for each dart the instant AutoDarts detects
+  // it — this is a quick test, so for now it only handles plain 1-20
+  // (ignoring Single/Double/Treble) and does nothing for Bull/Outer/Miss,
+  // since those files aren't uploaded yet.
+  const CALLER_BASE_URL = "https://raw.githubusercontent.com/B4KER83/AD2DC/main/";
+  const callerEnabled = true; // hardcoded on for this test — a proper toggle can replace this later
+  const callerAudioCache = {};
+
+  function preloadCallerAudio() {
+    for (let n = 1; n <= 20; n++) {
+      const audio = new Audio(CALLER_BASE_URL + n + ".wav");
+      audio.preload = "auto";
+      callerAudioCache[n] = audio;
+    }
+    log("Caller: preloaded 1-20 audio files from", CALLER_BASE_URL);
+  }
+
+  // Strips the Single/Double/Treble prefix and just returns the base
+  // number, e.g. "T20" -> 20, "S7" -> 7, "14" -> 14. Returns null for
+  // anything that isn't a plain numbered segment (MISS, Bull, Outer, "-").
+  function extractCallerNumber(rawLabel) {
+    const s = String(rawLabel || "").trim().toUpperCase();
+    if (!s || s === "-") return null;
+    if (/^\d{1,2}$/.test(s)) return parseInt(s, 10);
+    const m = /^[SDT](\d{1,2})$/.exec(s);
+    return m ? parseInt(m[1], 10) : null;
+  }
+
+  function playCallerNumber(num) {
+    if (!callerEnabled) return;
+    const audio = callerAudioCache[num];
+    if (!audio) { log("Caller: no sound file loaded for", num); return; }
+    try {
+      audio.currentTime = 0; // restart in case the same number gets called again quickly
+      const playPromise = audio.play();
+      const t0 = performance.now();
+      if (playPromise && playPromise.then) {
+        playPromise
+          .then(() => log("Caller: played", num, "(" + Math.round(performance.now() - t0) + "ms to start)"))
+          .catch(e => log("Caller: playback BLOCKED or failed for", num, "-", e.message));
+      }
+    } catch (e) {
+      log("Caller: playback error for", num, "-", e.message);
+    }
+  }
 
   function log(...args) { console.log("[AD2DC-DBD]", ...args); }
 
@@ -68,9 +114,9 @@
 
   // --- Force DartCounter's own input mode to dart-by-dart (segment keypad) ---
   function findDartCounterModeToggle() {
-    const containers = document.querySelectorAll("app-select-keyboardropdown");
+    const containers = document.querySelectorAll("app-select-keyboard-dropdown");
     if (containers.length === 0) return null;
-    if (containers.length > 1) log("NOTE: found", containers.length, "app-select-keyboardropdown elements — using the first");
+    if (containers.length > 1) log("NOTE: found", containers.length, "app-select-keyboard-dropdown elements — using the first");
     return containers[0].querySelector("div.relative.cursor-pointer.p-2\\.5");
   }
 
@@ -145,7 +191,7 @@
   // The first attempt right after the Bridge turns on sometimes misses —
   // the page seems to still be settling — but a second attempt shortly
   // after reliably succeeds. Retry automatically instead of requiring a
-  // manual toggle-off-anon.
+  // manual toggle-off-and-on.
   async function enforceDartCounterInputMode(maxAttempts = 3) {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const ok = await tryEnforceDartCounterInputMode();
@@ -429,7 +475,7 @@
     const bridgeGroup = document.createElement("div");
     Object.assign(bridgeGroup.style, { display: "flex", gap: "8px", alignItems: "center" });
     const label = document.createElement("span");
-    label.textContent = "Bridge";
+    label.textContent = "Bridge (D-by-D)";
     toggleBtn = document.createElement("button");
     Object.assign(toggleBtn.style, {
       cursor: "pointer", padding: "6px 10px", border: "1px solid #374151",
@@ -868,6 +914,8 @@
   if (isDartCounter) { ensureToggleUI(); }
 
   if (isAutoDarts) {
+    preloadCallerAudio();
+
     function updateHeartbeat() { GM_setValue("autodarts_heartbeat", Date.now()); }
     updateHeartbeat();
     setInterval(updateHeartbeat, 5000);
@@ -968,6 +1016,9 @@
           seq += 1;
           GM_setValue(CFG.storeDartKey, { seq, label: val, slot: i, sessionId: producerSessionId, ts: Date.now() });
           log("Published dart:", val, "slot", i);
+
+          const callerNum = extractCallerNumber(val);
+          if (callerNum) playCallerNumber(callerNum);
         }
         lastSeen[i] = val;
       }
