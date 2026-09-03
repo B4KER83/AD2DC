@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AutoDarts ↔ DartCounter Bridge (Dart-by-Dart)
 // @namespace    autodarts.dartcounter.bridge.dbd
-// @version      1.50.0
+// @version      1.54.0
 // @description  Read darts from AutoDarts and enter EACH dart individually into DartCounter's segment keypad, so checkout suggestions update live.
 // @match        http://127.0.0.1:3180/*
 // @match        http://192.168.*:3180/*
@@ -13,7 +13,9 @@
 // @grant        GM_registerMenuCommand
 // @grant        GM_notification
 // @grant        GM_unregisterMenuCommand
+// @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
+// @connect      raw.githubusercontent.com
 // @updateURL    https://raw.githubusercontent.com/B4KER83/AD2DC/main/ad2dc-bridge.user.js
 // @downloadURL  https://raw.githubusercontent.com/B4KER83/AD2DC/main/ad2dc-bridge.user.js
 // ==/UserScript==
@@ -38,27 +40,56 @@
   // (ignoring Single/Double/Treble) and does nothing for Bull/Outer/Miss,
   // since those files aren't uploaded yet.
   const CALLER_BASE_URL = "https://raw.githubusercontent.com/B4KER83/AD2DC/main/";
-  const callerEnabled = true; // hardcoded on for this test — a proper toggle can replace this later
+  let callerEnabled = GM_getValue("caller_enabled", true);
   const callerAudioCache = {};
 
+  // Shared across tabs the same way bridge_state is — the toggle button
+  // lives in the DartCounter tab's UI, but playback happens over on the
+  // AutoDarts side, so both need to agree on the current state via GM
+  // storage rather than a plain in-memory variable.
+  function setCallerEnabled(v) {
+    const requested = !!v;
+    GM_setValue("caller_enabled", requested);
+  }
+
+  GM_addValueChangeListener("caller_enabled", (n, o, v) => {
+    callerEnabled = !!v;
+    log("Caller:", callerEnabled ? "enabled" : "disabled");
+    updateCallerUI();
+  });
+
+  // Every achievable single-dart score: singles 1-20, plus every double/
+  // treble total above 20, plus Outer (25) and Bull (50). This is the full
+  // set of .wav files now in the repo.
+  const CALLER_EXTRA_SCORES = [21, 22, 24, 25, 26, 27, 28, 30, 32, 33, 34, 36, 38, 39, 40, 42, 45, 48, 50, 51, 54, 57, 60];
+
   function preloadCallerAudio() {
-    for (let n = 1; n <= 20; n++) {
+    const scores = [];
+    for (let n = 1; n <= 20; n++) scores.push(n);
+    for (const n of CALLER_EXTRA_SCORES) scores.push(n);
+
+    for (const n of scores) {
       const audio = new Audio(CALLER_BASE_URL + n + ".wav");
       audio.preload = "auto";
       callerAudioCache[n] = audio;
     }
-    log("Caller: preloaded 1-20 audio files from", CALLER_BASE_URL);
+    log("Caller: preloaded", scores.length, "audio files from", CALLER_BASE_URL);
   }
 
-  // Strips the Single/Double/Treble prefix and just returns the base
-  // number, e.g. "T20" -> 20, "S7" -> 7, "14" -> 14. Returns null for
-  // anything that isn't a plain numbered segment (MISS, Bull, Outer, "-").
-  function extractCallerNumber(rawLabel) {
-    const s = String(rawLabel || "").trim().toUpperCase();
-    if (!s || s === "-") return null;
-    if (/^\d{1,2}$/.test(s)) return parseInt(s, 10);
-    const m = /^[SDT](\d{1,2})$/.exec(s);
-    return m ? parseInt(m[1], 10) : null;
+  // Computes the actual score value a parsed dart is worth — Single 7 ->
+  // 7, Double 17 -> 34, Treble 20 -> 60, Bull -> 50, Outer -> 25. This is
+  // what the caller announces, not the base board number (a Treble 20
+  // calls "sixty", not "twenty"). Returns null for MISS, since there's no
+  // sound file for that yet.
+  function extractCallerScore(parsed) {
+    if (!parsed) return null;
+    if (parsed.tab === "MISS") return null;
+    if (parsed.tab === "Bull") return 50;
+    if (parsed.tab === "Outer") return 25;
+    if (parsed.tab === "Single") return parsed.num;
+    if (parsed.tab === "Double") return parsed.num * 2;
+    if (parsed.tab === "Treble") return parsed.num * 3;
+    return null;
   }
 
   function playCallerNumber(num) {
@@ -336,36 +367,9 @@
   // --- Toggle UI (draggable, position persisted across reloads) ---
   let toggleBtn = null;
   let autoSubmitBtn = null;
+  let callerBtn = null;
+  let updateBtn = null;
   let toggleWrap = null;
-  let turnScoreEl = null;
-  let turnScoreTotal = 0;
-
-  // Point value of one parsed dart — used to keep the running turn-score display current.
-  function scoreFromParsed(parsed) {
-    if (!parsed) return 0;
-    if (parsed.tab === "MISS") return 0;
-    if (parsed.tab === "Bull") return 50;
-    if (parsed.tab === "Outer") return 25;
-    if (parsed.tab === "Single") return parsed.num;
-    if (parsed.tab === "Double") return parsed.num * 2;
-    if (parsed.tab === "Treble") return parsed.num * 3;
-    return 0;
-  }
-
-  function updateTurnScoreUI() {
-    if (!turnScoreEl) return;
-    turnScoreEl.textContent = String(turnScoreTotal);
-  }
-
-  function addToTurnScore(points) {
-    turnScoreTotal += points;
-    updateTurnScoreUI();
-  }
-
-  function resetTurnScore() {
-    turnScoreTotal = 0;
-    updateTurnScoreUI();
-  }
 
   function makeDraggable(el, handle) {
     const dragEl = handle || el;
@@ -413,6 +417,47 @@
     if (!autoSubmitBtn) return;
     autoSubmitBtn.textContent = autoSubmitEnabled ? "ON" : "OFF";
     autoSubmitBtn.style.background = autoSubmitEnabled ? "#059669" : "#6b7280";
+  }
+
+  function updateCallerUI() {
+    if (!callerBtn) return;
+    callerBtn.textContent = callerEnabled ? "ON" : "OFF";
+    callerBtn.style.background = callerEnabled ? "#059669" : "#6b7280";
+  }
+
+  // Simple numeric version comparison — "1.9.0" vs "1.10.0" would sort
+  // wrong as plain strings, so compare each dot-separated part as a number.
+  function isNewerVersion(remote, local) {
+    const r = String(remote).split(".").map(Number);
+    const l = String(local).split(".").map(Number);
+    for (let i = 0; i < Math.max(r.length, l.length); i++) {
+      const rv = r[i] || 0;
+      const lv = l[i] || 0;
+      if (rv > lv) return true;
+      if (rv < lv) return false;
+    }
+    return false;
+  }
+
+  function checkForUpdate() {
+    if (typeof GM_xmlhttpRequest !== "function") return; // grant unavailable — silently skip
+    GM_xmlhttpRequest({
+      method: "GET",
+      url: CFG.updateUrl + "?_=" + Date.now(), // cache-bust so we don't compare against a stale cached copy
+      onload: (res) => {
+        const m = /@version\s+([\d.]+)/.exec(res.responseText || "");
+        if (!m) { log("Update check: couldn't find @version in fetched source"); return; }
+        const remoteVersion = m[1];
+        const localVersion = (typeof GM_info !== "undefined" && GM_info.script) ? GM_info.script.version : null;
+        if (!localVersion) { log("Update check: couldn't determine local version"); return; }
+        log("Update check: local", localVersion, "— remote", remoteVersion);
+        if (isNewerVersion(remoteVersion, localVersion) && updateBtn) {
+          updateBtn.textContent = "Update Available";
+          updateBtn.style.background = "#d97706"; // amber — stands out from the grey/green used elsewhere
+        }
+      },
+      onerror: (e) => log("Update check failed:", e)
+    });
   }
 
   // AutoDarts view — only created when the Bridge turns on, removed when it
@@ -513,20 +558,24 @@
     autoSubmitGroup.appendChild(asLabel);
     autoSubmitGroup.appendChild(autoSubmitBtn);
 
-    // Running turn score — sums each dart as it's entered, resets on takeout
-    const scoreGroup = document.createElement("div");
-    Object.assign(scoreGroup.style, { display: "flex", gap: "8px", alignItems: "center" });
-    const scoreLabel = document.createElement("span");
-    scoreLabel.textContent = "Score";
-    turnScoreEl = document.createElement("span");
-    Object.assign(turnScoreEl.style, {
-      padding: "6px 14px", border: "1px solid #374151", borderRadius: "4px",
-      background: "#111827", color: "#fbbf24", fontFamily: "monospace", fontWeight: "bold",
-      fontSize: "18px", minWidth: "40px", textAlign: "center"
+    // Caller on/off — plays a .wav for each dart the instant AutoDarts
+    // detects it. State is shared across tabs via GM storage, same
+    // mechanism as bridge_state, since playback actually happens over on
+    // the AutoDarts side, not here.
+    const callerGroup = document.createElement("div");
+    Object.assign(callerGroup.style, { display: "flex", gap: "8px", alignItems: "center" });
+    const callerLabel = document.createElement("span");
+    callerLabel.textContent = "Caller";
+    callerBtn = document.createElement("button");
+    Object.assign(callerBtn.style, {
+      cursor: "pointer", padding: "6px 10px", border: "1px solid #374151",
+      borderRadius: "4px", background: "#6b7280", color: "#fff", fontFamily: "monospace"
     });
-    turnScoreEl.textContent = "0";
-    scoreGroup.appendChild(scoreLabel);
-    scoreGroup.appendChild(turnScoreEl);
+    callerBtn.addEventListener("click", () => {
+      setCallerEnabled(!GM_getValue("caller_enabled", true));
+    });
+    callerGroup.appendChild(callerLabel);
+    callerGroup.appendChild(callerBtn);
 
     // Update check — opens the script's own raw source URL in a new tab.
     // Tampermonkey intercepts that navigation itself and shows its
@@ -534,7 +583,7 @@
     // manually) — there's no API for a userscript to trigger Tampermonkey's
     // update check directly, so this is the reliable way to get the same
     // result with one click instead of digging through the dashboard.
-    const updateBtn = document.createElement("button");
+    updateBtn = document.createElement("button");
     updateBtn.textContent = "Update";
     Object.assign(updateBtn.style, {
       cursor: "pointer", padding: "6px 10px", border: "1px solid #374151",
@@ -544,16 +593,18 @@
     updateBtn.addEventListener("click", () => {
       window.open(CFG.updateUrl, "_blank");
     });
+    checkForUpdate();
 
     dragHandle.appendChild(bridgeGroup);
     dragHandle.appendChild(autoSubmitGroup);
-    dragHandle.appendChild(scoreGroup);
+    dragHandle.appendChild(callerGroup);
     dragHandle.appendChild(updateBtn);
     wrap.appendChild(dragHandle);
     document.documentElement.appendChild(wrap);
     makeDraggable(wrap, dragHandle);
     updateToggleUI(bridgeEnabled);
     updateAutoSubmitUI();
+    updateCallerUI();
   }
   // --- User guide panel (opened via the (i) icon next to the Bridge toggle) ---
   let guidePanel = null;
@@ -593,20 +644,20 @@
       • DartCounter's input mode is switched to dart-by-dart.<br>
       No settings menu visits needed.</p>
 
-      <p><strong>The three boxes</strong><br>
+      <p><strong>The boxes</strong><br>
       <strong>Bridge</strong> — main on/off switch.<br>
       <strong>Auto Submit</strong> — presses DartCounter's Submit button for
       you after a takeout (e.g. after a bust). Turns on automatically with
       the Bridge; toggle off to press Submit yourself instead.<br>
-      <strong>Score</strong> — running total for the current throw, adds up
-      as each dart lands, resets when darts are pulled from the board.</p>
+      <strong>Caller</strong> — plays a sound announcing each dart's score
+      the instant AutoDarts detects it.</p>
 
       <p><strong>Staying up to date</strong><br>
       This script auto-updates in the background — Tampermonkey checks the
-      source on GitHub periodically on its own. Want it right now instead
-      of waiting? Click <strong>Update</strong> below the Score
-      box — it opens the source in a new tab and Tampermonkey handles the
-      rest.</p>
+      source on GitHub periodically on its own. The <strong>Update</strong>
+      button also checks itself and turns to <strong>Update Available</strong>
+      when a newer version is out — click it to open the source in a new
+      tab and let Tampermonkey handle the rest.</p>
 
       <p><strong>If it stops working</strong><br>
       Turn the Bridge off and back on — fixes most hiccups. Still stuck?
@@ -964,8 +1015,13 @@
     // AutoDarts' own status label cycles through these exact phrases as a
     // dart sequence completes and gets taken out — much more reliable than
     // guessing which WAIT/STABLE/DART/HAND/TAKEOUT badge has a filled
-    // background (that heuristic wasn't firing reliably).
-    const PHASE_LABELS = ["Throw detected", "Takeout started", "Takeout in progress", "Takeout finished"];
+    // background (that heuristic wasn't firing reliably). Matched
+    // case-insensitively, and takeout completion specifically matches on
+    // the keyword "finished" rather than the exact full phrase — the same
+    // kind of exact-string fragility bit us for real with Bull/BULL
+    // earlier, so this is hardened against wording/casing drift up front.
+    const PHASE_LABELS_RE = /^(throw detected|takeout started|takeout in progress|takeout finished)$/i;
+    const TAKEOUT_FINISHED_RE = /finished/i;
 
     function readDarts() {
       const els = document.getElementsByClassName(CFG.autodartsSpanClass);
@@ -1017,8 +1073,8 @@
           GM_setValue(CFG.storeDartKey, { seq, label: val, slot: i, sessionId: producerSessionId, ts: Date.now() });
           log("Published dart:", val, "slot", i);
 
-          const callerNum = extractCallerNumber(val);
-          if (callerNum) playCallerNumber(callerNum);
+          const callerScore = extractCallerScore(parseDartLabel(val));
+          if (callerScore) playCallerNumber(callerScore);
         }
         lastSeen[i] = val;
       }
@@ -1034,10 +1090,10 @@
       // screen (often already "Takeout finished" from before), not a real
       // new event. lastPhase === null means "haven't recorded a baseline
       // yet", so skip firing that one time.
-      const currentPhase = allEls.find(t => PHASE_LABELS.includes(t)) || null;
+      const currentPhase = allEls.find(t => PHASE_LABELS_RE.test(t)) || null;
       if (currentPhase !== lastPhase) {
         log("Throw phase changed:", lastPhase, "->", currentPhase);
-        if (lastPhase !== null && currentPhase === "Takeout finished") {
+        if (lastPhase !== null && currentPhase && TAKEOUT_FINISHED_RE.test(currentPhase)) {
           takeoutSeq += 1;
           GM_setValue(CFG.storeTakeoutKey, { seq: takeoutSeq, sessionId: producerSessionId, ts: Date.now() });
           log("Published takeout event, seq", takeoutSeq);
@@ -1067,7 +1123,6 @@
     lastTakeoutSeqHandled = 0;
     lastDartSessionSeen = null;
     lastTakeoutSessionSeen = null;
-    resetTurnScore();
 
     if (consumerStarted) return; // listeners themselves only need attaching once
     consumerStarted = true;
@@ -1090,7 +1145,6 @@
 
       const parsed = parseDartLabel(newVal.label);
       queueDartEntry(parsed);
-      addToTurnScore(scoreFromParsed(parsed));
     });
 
     GM_addValueChangeListener(CFG.storeTakeoutKey, (name, oldVal, newVal) => {
@@ -1103,8 +1157,6 @@
       }
       if (newVal.seq <= lastTakeoutSeqHandled) return;
       lastTakeoutSeqHandled = newVal.seq;
-
-      resetTurnScore(); // darts pulled from the board — clear the running total regardless of Auto Submit
 
       if (!autoSubmitEnabled) {
         log("Takeout detected — Auto Submit is off, skipping");
