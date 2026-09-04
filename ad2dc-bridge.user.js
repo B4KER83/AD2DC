@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AutoDarts ↔ DartCounter Bridge (Dart-by-Dart)
 // @namespace    autodarts.dartcounter.bridge.dbd
-// @version      1.54.0
+// @version      1.58.0
 // @description  Read darts from AutoDarts and enter EACH dart individually into DartCounter's segment keypad, so checkout suggestions update live.
 // @match        http://127.0.0.1:3180/*
 // @match        http://192.168.*:3180/*
@@ -14,6 +14,7 @@
 // @grant        GM_notification
 // @grant        GM_unregisterMenuCommand
 // @grant        GM_xmlhttpRequest
+// @grant        GM_info
 // @grant        unsafeWindow
 // @connect      raw.githubusercontent.com
 // @updateURL    https://raw.githubusercontent.com/B4KER83/AD2DC/main/ad2dc-bridge.user.js
@@ -69,8 +70,17 @@
     for (const n of CALLER_EXTRA_SCORES) scores.push(n);
 
     for (const n of scores) {
-      const audio = new Audio(CALLER_BASE_URL + n + ".wav");
+      const url = CALLER_BASE_URL + n + ".wav";
+      const audio = new Audio(url);
       audio.preload = "auto";
+      // Without this, a missing/misnamed/broken file just fails to play
+      // with zero explanation — silent in the exact way we've been
+      // burned by elsewhere in this script. Log it clearly so a bad file
+      // shows up immediately instead of looking like a matching problem.
+      audio.addEventListener("error", () => {
+        const err = audio.error;
+        log("Caller: FAILED to load", n + ".wav", "from", url, "-", err ? "code " + err.code : "unknown error");
+      });
       callerAudioCache[n] = audio;
     }
     log("Caller: preloaded", scores.length, "audio files from", CALLER_BASE_URL);
@@ -1042,11 +1052,14 @@
     function extractDartSlots(allEls) {
       const matches = allEls.filter(t => DART_VALUE_RE.test(t));
       if (matches.length === 3) return matches;
-      // Shape didn't come out as expected — fall back to the old
-      // assumption rather than fail outright, but log it loudly so a
-      // real mismatch doesn't slip by unnoticed.
-      log("extractDartSlots: expected 3 dart-shaped values, found", matches.length, "— falling back to fixed positions. RAW:", allEls);
-      return allEls.slice(2, 5);
+      // The old fallback guessed fixed positions (slice(2,5)) here — but
+      // that's exactly the fragility this function exists to avoid. If the
+      // shape is ever genuinely wrong, guessing risks silently entering a
+      // wrong score into a live match, which is worse than entering
+      // nothing. Refuse instead: treat this tick as "no darts detected"
+      // and log it loudly so a real mismatch doesn't slip by unnoticed.
+      log("extractDartSlots: unexpected dart-slot shape — refusing to guess. RAW:", allEls);
+      return ["-", "-", "-"];
     }
 
     let lastRawLogged = "";
@@ -1163,13 +1176,21 @@
         return;
       }
 
-      const submitBtn = findSubmitButton();
-      if (clickEl(submitBtn)) {
-        log("Auto Submit — clicked Submit after takeout");
-      } else {
-        log("FAILED — Submit button not found on takeout");
-        notify("AD2DC Error", "Submit button not found", true);
-      }
+      // Route through the same queue dart entries use — otherwise Submit
+      // could fire while the last dart's own click sequence (tab click,
+      // wait, number click) is still in progress, interrupting it or
+      // submitting a turn before the final dart is actually entered.
+      dartEntryQueue = dartEntryQueue
+        .then(() => {
+          const submitBtn = findSubmitButton();
+          if (clickEl(submitBtn)) {
+            log("Auto Submit — clicked Submit after takeout");
+          } else {
+            log("FAILED — Submit button not found on takeout");
+            notify("AD2DC Error", "Submit button not found", true);
+          }
+        })
+        .catch(e => log("Auto Submit error:", e));
     });
 
     log("Consumer active (dart-by-dart mode).");
