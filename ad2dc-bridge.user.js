@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AutoDarts ↔ DartCounter Bridge (Dart-by-Dart)
 // @namespace    autodarts.dartcounter.bridge.dbd
-// @version      1.58.0
+// @version      1.59.0
 // @description  Read darts from AutoDarts and enter EACH dart individually into DartCounter's segment keypad, so checkout suggestions update live.
 // @match        http://127.0.0.1:3180/*
 // @match        http://192.168.*:3180/*
@@ -319,6 +319,7 @@
   async function onBridgeEnabled() {
     startKeepAlive();
     if (isDartCounter) {
+      setToggleConnecting(true);
       showAutodartsFrame(); // starts loading now — needs a moment before its heartbeat appears
       // Run these one after another, not overlapping — clicking the
       // Settings page's Auto Submit toggle at the same time as opening the
@@ -328,12 +329,14 @@
       const ready = await waitForAutodartsReady();
       if (!ready) {
         bridgeEnabled = false;
+        setToggleConnecting(false);
         updateToggleUI(false);
         hideAutodartsFrame();
         notify("AutoDarts not found", "The embedded AutoDarts view didn't load in time — try again.", true);
         return;
       }
       notify("AD2DC-Bridge (dart-by-dart)", "ready - waiting for darts");
+      setToggleConnecting(false);
       updateToggleUI(true);
       autoSubmitEnabled = true;
       updateAutoSubmitUI();
@@ -347,6 +350,7 @@
     stopKeepAlive();
     if (isDartCounter) {
       notify("AD2DC-Bridge", "disabled");
+      setToggleConnecting(false);
       updateToggleUI(false);
       hideAutodartsFrame();
     }
@@ -655,7 +659,8 @@
       No settings menu visits needed.</p>
 
       <p><strong>The boxes</strong><br>
-      <strong>Bridge</strong> — main on/off switch.<br>
+      <strong>Bridge</strong> — main on/off switch. Pulses amber with
+      "..." briefly while it's connecting — that's normal, not stuck.<br>
       <strong>Auto Submit</strong> — presses DartCounter's Submit button for
       you after a takeout (e.g. after a bust). Turns on automatically with
       the Bridge; toggle off to press Submit yourself instead.<br>
@@ -686,6 +691,32 @@
     if (!toggleBtn) return;
     toggleBtn.textContent = on ? "ON" : "OFF";
     toggleBtn.style.background = on ? "#059669" : "#6b7280";
+  }
+
+  // Shows a pulsing "..." state on the Bridge button while startup is
+  // still working (waiting for AutoDarts to be ready, retrying the
+  // DartCounter mode-switch) — otherwise the button just sits there
+  // silently for however long that takes, which can be 20+ seconds in a
+  // slow retry case, with nothing to show it isn't just stuck.
+  let connectingStyleInjected = false;
+  function ensureConnectingStyle() {
+    if (connectingStyleInjected) return;
+    const style = document.createElement("style");
+    style.textContent = "@keyframes ad2dc-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } } " +
+      ".ad2dc-connecting { animation: ad2dc-pulse 1s ease-in-out infinite; background: #b45309 !important; }";
+    document.documentElement.appendChild(style);
+    connectingStyleInjected = true;
+  }
+
+  function setToggleConnecting(active) {
+    if (!toggleBtn) return;
+    ensureConnectingStyle();
+    if (active) {
+      toggleBtn.textContent = "...";
+      toggleBtn.classList.add("ad2dc-connecting");
+    } else {
+      toggleBtn.classList.remove("ad2dc-connecting");
+    }
   }
 
   // --- Parse an Autodarts dart label into keypad instructions ---
@@ -1084,7 +1115,7 @@
           // a new dart landed in this slot — publish immediately
           seq += 1;
           GM_setValue(CFG.storeDartKey, { seq, label: val, slot: i, sessionId: producerSessionId, ts: Date.now() });
-          log("Published dart:", val, "slot", i);
+          if (CFG.debug) log("Published dart:", val, "slot", i);
 
           const callerScore = extractCallerScore(parseDartLabel(val));
           if (callerScore) playCallerNumber(callerScore);
@@ -1105,7 +1136,7 @@
       // yet", so skip firing that one time.
       const currentPhase = allEls.find(t => PHASE_LABELS_RE.test(t)) || null;
       if (currentPhase !== lastPhase) {
-        log("Throw phase changed:", lastPhase, "->", currentPhase);
+        if (CFG.debug) log("Throw phase changed:", lastPhase, "->", currentPhase);
         if (lastPhase !== null && currentPhase && TAKEOUT_FINISHED_RE.test(currentPhase)) {
           takeoutSeq += 1;
           GM_setValue(CFG.storeTakeoutKey, { seq: takeoutSeq, sessionId: producerSessionId, ts: Date.now() });
